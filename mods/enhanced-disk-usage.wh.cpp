@@ -36,7 +36,7 @@ ex.
 
 - barNormalStart: "#2ECC71"
   $name: Bar Color Gradient Start
-  $description: set start and end to the same value if you don't want a gradient
+  $description: set start and end to the same value if you do not want a gradient
 - barNormalEnd: "#27AE60"
   $name: Bar Color Gradient End
 - barFullStart: "#E74C3C"
@@ -64,22 +64,23 @@ ex.
 - showGloss: true
   $name: Enable Glossy Overlay
 - leftInset: 0
-  $name: Inset Left
+  $name: Bar Inset Left
 - rightInset: 0
-  $name: Inset Right
+  $name: Bar Inset Right
 - topInset: 0
-  $name: Inset Top
+  $name: Bar Inset Top
 - bottomInset: 0
-  $name: Inset Bottom
-- formatString: "%s free | %s/%s"
+  $name: Bar Inset Bottom
+- formatString: "%s free I %s used\n%s total"
   $name: Text Display Format
+  $description: custom disk usage text.%s for each disk usage stat, \n for new line
 - boldUsed: true
-  $name: Bold Used Space text
+  $name: Bold Used Space Value
 - boldStyle: sans-serif
   $name: Text Style
   $options:
-    - serif: Serif Bold
-    - sans-serif: Sans-Serif Bold
+    - serif: Serif
+    - sans-serif: Sans-Serif
 - removeSpace: false
   $name: Remove Space before Units (100GB/100 GB)
 - lineYOffset: 0
@@ -87,12 +88,14 @@ ex.
 - barYOffset: 0
   $name: Progress Bar Vertical Offset
 - lineSpacing: 0
-  $name: Multi-line Spacing Offset (negative squeezes lines closer)
+  $name: Line Height
+  $description: Adjusts the vertical space between lines of text 
 - fontSize: 0
-  $name: Font Size Offset
+  $name: Font Size
   $description: Adjusts the font size (positive is larger, negative is smaller)
 - enableWordEllipsis: false
-  $name: Enable Word Ellipsis (if text is too long)
+  $name: Enable Word Ellipsis 
+  $description: (Adds "..." if text is too long)
 */
 // ==/WindhawkModSettings==
 
@@ -260,7 +263,12 @@ void LoadSettings() {
     g_trackBottomInset = Wh_GetIntSetting(L"trackBottomInset");
 
     s = Wh_GetStringSetting(L"formatString");
-    g_formatString = s ? s : L"%s free | %s/%s";
+
+    if (s && s[0] != L'\0') {
+        g_formatString = s;
+    } else {
+        g_formatString = L"%s free | %s used\n%s total";
+    }
     Wh_FreeStringSetting(s);
     size_t pos = 0;
     while ((pos = g_formatString.find(L"\\n", pos)) != std::wstring::npos) {
@@ -297,6 +305,17 @@ std::wstring CleanNumericString(const std::wstring& s) {
             result += (check == L',') ? L'.' : check;
     }
     return result;
+}
+
+bool IsValidUnitString(const wchar_t* u) {
+    size_t len = wcslen(u);
+    if (len == 0 || len > 10)
+        return false;
+    for (size_t i = 0; i < len; ++i) {
+        if (!iswalpha(u[i]))
+            return false;
+    }
+    return true;
 }
 
 double GetUnitMultiplier(const wchar_t* u) {
@@ -591,6 +610,9 @@ bool FindSpaceStats(const std::wstring& t, std::wstring& f, std::wstring& tot) {
     if (num2_start == std::wstring::npos)
         return false;
 
+    if (num2_start == size1_end)
+        return false;
+
     pos = num2_start;
     while (pos < nt.length() && (iswdigit(nt[pos]) || nt[pos] == L'.' ||
                                  nt[pos] == L',' || nt[pos] == L' '))
@@ -648,119 +670,135 @@ int WINAPI DrawTextW_Hook(HDC hdc, LPCWSTR psz, int cch, LPRECT prc, UINT fmt) {
 
         if (swscanf(cf.c_str(), L"%lf %15s", &fv, fu) == 2 &&
             swscanf(ct.c_str(), L"%lf %15s", &tv, tu) == 2) {
-            double um1 = GetUnitMultiplier(fu);
-            double um2 = GetUnitMultiplier(tu);
-            if (um1 > 0.0 && um2 > 0.0) {
-                std::wstring us = std::wstring(StrFormatByteSizeW(
-                    (ULONGLONG)std::max(0.0, (tv * um2 - fv * um1)), fu, 16));
+            if (IsValidUnitString(fu) && IsValidUnitString(tu)) {
+                double um1 = GetUnitMultiplier(fu);
+                double um2 = GetUnitMultiplier(tu);
+                if (um1 > 0.0 && um2 > 0.0) {
+                    std::wstring us = std::wstring(StrFormatByteSizeW(
+                        (ULONGLONG)std::max(0.0, (tv * um2 - fv * um1)), fu,
+                        16));
 
-                if (g_removeSpace)
-                    us.erase(std::remove(us.begin(), us.end(), L' '), us.end());
-                std::wstring fS = g_formatString;
-                size_t p1 = fS.find(L"%s"), p2 = fS.find(L"%s", p1 + 2),
-                       p3 = fS.find(L"%s", p2 + 2);
-                std::wstring s1 = fS.substr(0, p1) + fs +
-                                  fS.substr(p1 + 2, p2 - p1 - 2),
-                             s2 = g_boldUsed ? MakeBoldText(us) : us,
-                             s3 = fS.substr(p2 + 2, p3 - p2 - 2) + ts +
-                                  fS.substr(p3 + 2);
+                    if (g_removeSpace)
+                        us.erase(std::remove(us.begin(), us.end(), L' '),
+                                 us.end());
+                    std::wstring fS = g_formatString;
+                    size_t p1 = fS.find(L"%s");
+                    size_t p2 = p1 != std::wstring::npos ? fS.find(L"%s", p1 + 2) : std::wstring::npos;
+                    size_t p3 = p2 != std::wstring::npos ? fS.find(L"%s", p2 + 2) : std::wstring::npos;
 
-                if (fmt & DT_CALCRECT) {
-                    std::wstring ft = s1 + s2 + s3;
-                    UINT calcFmt = fmt;
-                    if (ft.find(L'\n') != std::wstring::npos) {
-                        calcFmt &= ~DT_SINGLELINE;
+                    if (p1 == std::wstring::npos || p2 == std::wstring::npos || p3 == std::wstring::npos) {
+                        fS = L"%s free | %s used\n%s total";
+                        p1 = fS.find(L"%s");
+                        p2 = fS.find(L"%s", p1 + 2);
+                        p3 = fS.find(L"%s", p2 + 2);
                     }
-                    return DrawTextW_Orig(hdc, ft.c_str(), (int)ft.length(),
-                                          prc, calcFmt);
-                }
 
-                int applyLineYOffset = g_lineYOffset;
+                    std::wstring s1 = fS.substr(0, p1) + fs +
+                                      fS.substr(p1 + 2, p2 - p1 - 2),
+                                 s2 = g_boldUsed ? MakeBoldText(us) : us,
+                                 s3 = fS.substr(p2 + 2, p3 - p2 - 2) + ts +
+                                      fS.substr(p3 + 2);
 
-                HFONT hOldFont = NULL;
-                HFONT hNewFont = NULL;
-                float scale = (float)GetDeviceCaps(hdc, LOGPIXELSY) / 96.0f;
-                if (g_fontSize != 0) {
-                    HFONT hCurrent = (HFONT)GetCurrentObject(hdc, OBJ_FONT);
-                    LOGFONTW lf;
-                    if (GetObjectW(hCurrent, sizeof(lf), &lf)) {
-                        if (lf.lfHeight < 0)
-                            lf.lfHeight -= (int)(g_fontSize * scale);
-                        else
-                            lf.lfHeight += (int)(g_fontSize * scale);
-                        hNewFont = CreateFontIndirectW(&lf);
-                        if (hNewFont)
-                            hOldFont = (HFONT)SelectObject(hdc, hNewFont);
+                    if (fmt & DT_CALCRECT) {
+                        std::wstring ft = s1 + s2 + s3;
+                        UINT calcFmt = fmt;
+                        if (ft.find(L'\n') != std::wstring::npos) {
+                            calcFmt &= ~DT_SINGLELINE;
+                        }
+                        return DrawTextW_Orig(hdc, ft.c_str(), (int)ft.length(),
+                                              prc, calcFmt);
                     }
-                }
 
-                std::wstring ft = s1 + s2 + s3;
-                bool multiLine = (ft.find(L'\n') != std::wstring::npos);
+                    int applyLineYOffset = g_lineYOffset;
 
-                UINT dF = fmt | DT_NOPREFIX;
-                if (!g_enableWordEllipsis) {
-                    dF &= ~(DT_END_ELLIPSIS | DT_PATH_ELLIPSIS |
-                            DT_WORD_ELLIPSIS);
-                } else {
-                    dF |= DT_WORD_ELLIPSIS | DT_END_ELLIPSIS;
-                }
-                RECT r = *prc;
-                r.top += applyLineYOffset;
-                r.bottom += applyLineYOffset;
-
-                int ft_ret = 0;
-                if (multiLine) {
-                    std::vector<std::wstring> lines;
-                    size_t start_pos = 0, end_pos = 0;
-                    while ((end_pos = ft.find(L'\n', start_pos)) !=
-                           std::wstring::npos) {
-                        lines.push_back(
-                            ft.substr(start_pos, end_pos - start_pos));
-                        start_pos = end_pos + 1;
-                    }
-                    lines.push_back(ft.substr(start_pos));
-
-                    dF &= ~(DT_SINGLELINE | DT_VCENTER | DT_BOTTOM);
-                    dF |= DT_TOP | DT_SINGLELINE | DT_NOCLIP | DT_NOPREFIX;
-
-                    int totalHeight = 0;
-                    for (size_t i = 0; i < lines.size(); ++i) {
-                        RECT lr = r;
-                        lr.top += totalHeight;
-                        lr.bottom += 1000;
-                        if (fmt & DT_CALCRECT) {
-                            DrawTextW_Orig(hdc, lines[i].c_str(),
-                                           (int)lines[i].length(), &lr,
-                                           dF | DT_CALCRECT);
-                            totalHeight += (lr.bottom - lr.top) + g_lineSpacing;
-                        } else {
-                            RECT calcR = lr;
-                            DrawTextW_Orig(hdc, lines[i].c_str(),
-                                           (int)lines[i].length(), &calcR,
-                                           dF | DT_CALCRECT);
-                            DrawTextW_Orig(hdc, lines[i].c_str(),
-                                           (int)lines[i].length(), &lr, dF);
-                            totalHeight +=
-                                (calcR.bottom - calcR.top) + g_lineSpacing;
+                    HFONT hOldFont = NULL;
+                    HFONT hNewFont = NULL;
+                    float scale = (float)GetDeviceCaps(hdc, LOGPIXELSY) / 96.0f;
+                    if (g_fontSize != 0) {
+                        HFONT hCurrent = (HFONT)GetCurrentObject(hdc, OBJ_FONT);
+                        LOGFONTW lf;
+                        if (GetObjectW(hCurrent, sizeof(lf), &lf)) {
+                            if (lf.lfHeight < 0)
+                                lf.lfHeight -= (int)(g_fontSize * scale);
+                            else
+                                lf.lfHeight += (int)(g_fontSize * scale);
+                            hNewFont = CreateFontIndirectW(&lf);
+                            if (hNewFont)
+                                hOldFont = (HFONT)SelectObject(hdc, hNewFont);
                         }
                     }
-                    if (fmt & DT_CALCRECT) {
-                        prc->bottom = prc->top + totalHeight - g_lineSpacing;
-                    }
-                    ft_ret = totalHeight - g_lineSpacing;
-                } else {
-                    ft_ret = DrawTextW_Orig(hdc, ft.c_str(), (int)ft.length(),
-                                            &r, dF);
-                }
 
-                if (hOldFont) {
-                    SelectObject(hdc, hOldFont);
-                    DeleteObject(hNewFont);
+                    std::wstring ft = s1 + s2 + s3;
+                    bool multiLine = (ft.find(L'\n') != std::wstring::npos);
+
+                    UINT dF = fmt | DT_NOPREFIX;
+                    if (!g_enableWordEllipsis) {
+                        dF &= ~(DT_END_ELLIPSIS | DT_PATH_ELLIPSIS |
+                                DT_WORD_ELLIPSIS);
+                    } else {
+                        dF |= DT_WORD_ELLIPSIS | DT_END_ELLIPSIS;
+                    }
+                    RECT r = *prc;
+                    r.top += applyLineYOffset;
+                    r.bottom += applyLineYOffset;
+
+                    int ft_ret = 0;
+                    if (multiLine) {
+                        std::vector<std::wstring> lines;
+                        size_t start_pos = 0, end_pos = 0;
+                        while ((end_pos = ft.find(L'\n', start_pos)) !=
+                               std::wstring::npos) {
+                            lines.push_back(
+                                ft.substr(start_pos, end_pos - start_pos));
+                            start_pos = end_pos + 1;
+                        }
+                        lines.push_back(ft.substr(start_pos));
+
+                        dF &= ~(DT_SINGLELINE | DT_VCENTER | DT_BOTTOM);
+                        dF |= DT_TOP | DT_SINGLELINE | DT_NOCLIP | DT_NOPREFIX;
+
+                        int totalHeight = 0;
+                        for (size_t i = 0; i < lines.size(); ++i) {
+                            RECT lr = r;
+                            lr.top += totalHeight;
+                            lr.bottom += 1000;
+                            if (fmt & DT_CALCRECT) {
+                                DrawTextW_Orig(hdc, lines[i].c_str(),
+                                               (int)lines[i].length(), &lr,
+                                               dF | DT_CALCRECT);
+                                totalHeight +=
+                                    (lr.bottom - lr.top) + g_lineSpacing;
+                            } else {
+                                RECT calcR = lr;
+                                DrawTextW_Orig(hdc, lines[i].c_str(),
+                                               (int)lines[i].length(), &calcR,
+                                               dF | DT_CALCRECT);
+                                DrawTextW_Orig(hdc, lines[i].c_str(),
+                                               (int)lines[i].length(), &lr, dF);
+                                totalHeight +=
+                                    (calcR.bottom - calcR.top) + g_lineSpacing;
+                            }
+                        }
+                        if (fmt & DT_CALCRECT) {
+                            prc->bottom =
+                                prc->top + totalHeight - g_lineSpacing;
+                        }
+                        ft_ret = totalHeight - g_lineSpacing;
+                    } else {
+                        ft_ret = DrawTextW_Orig(hdc, ft.c_str(),
+                                                (int)ft.length(), &r, dF);
+                    }
+
+                    if (hOldFont) {
+                        SelectObject(hdc, hOldFont);
+                        DeleteObject(hNewFont);
+                    }
+                    return ft_ret;
                 }
-                return ft_ret;
             }
         }
     }
+
     return DrawTextW_Orig(hdc, psz, cch, prc, fmt);
 }
 
@@ -806,128 +844,144 @@ int WINAPI DrawTextExW_Hook(HDC hdc,
 
         if (swscanf(cf.c_str(), L"%lf %15s", &fv, fu) == 2 &&
             swscanf(ct.c_str(), L"%lf %15s", &tv, tu) == 2) {
-            double um1 = GetUnitMultiplier(fu);
-            double um2 = GetUnitMultiplier(tu);
-            if (um1 > 0.0 && um2 > 0.0) {
-                std::wstring us = std::wstring(StrFormatByteSizeW(
-                    (ULONGLONG)std::max(0.0, (tv * um2 - fv * um1)), fu, 16));
+            if (IsValidUnitString(fu) && IsValidUnitString(tu)) {
+                double um1 = GetUnitMultiplier(fu);
+                double um2 = GetUnitMultiplier(tu);
+                if (um1 > 0.0 && um2 > 0.0) {
+                    std::wstring us = std::wstring(StrFormatByteSizeW(
+                        (ULONGLONG)std::max(0.0, (tv * um2 - fv * um1)), fu,
+                        16));
 
-                if (g_removeSpace)
-                    us.erase(std::remove(us.begin(), us.end(), L' '), us.end());
-                std::wstring fS = g_formatString;
-                size_t p1 = fS.find(L"%s"), p2 = fS.find(L"%s", p1 + 2),
-                       p3 = fS.find(L"%s", p2 + 2);
-                std::wstring s1 = fS.substr(0, p1) + fs +
-                                  fS.substr(p1 + 2, p2 - p1 - 2),
-                             s2 = g_boldUsed ? MakeBoldText(us) : us,
-                             s3 = fS.substr(p2 + 2, p3 - p2 - 2) + ts +
-                                  fS.substr(p3 + 2);
+                    if (g_removeSpace)
+                        us.erase(std::remove(us.begin(), us.end(), L' '),
+                                 us.end());
+                    std::wstring fS = g_formatString;
+                    size_t p1 = fS.find(L"%s");
+                    size_t p2 = p1 != std::wstring::npos ? fS.find(L"%s", p1 + 2) : std::wstring::npos;
+                    size_t p3 = p2 != std::wstring::npos ? fS.find(L"%s", p2 + 2) : std::wstring::npos;
 
-                if (fmt & DT_CALCRECT) {
-                    std::wstring ft = s1 + s2 + s3;
-                    std::vector<wchar_t> b(ft.begin(), ft.end());
-                    b.push_back(0);
-                    UINT calcFmt = fmt;
-                    if (ft.find(L'\n') != std::wstring::npos) {
-                        calcFmt &= ~DT_SINGLELINE;
+                    if (p1 == std::wstring::npos || p2 == std::wstring::npos || p3 == std::wstring::npos) {
+                        fS = L"%s free | %s used\n%s total";
+                        p1 = fS.find(L"%s");
+                        p2 = fS.find(L"%s", p1 + 2);
+                        p3 = fS.find(L"%s", p2 + 2);
                     }
-                    return DrawTextExW_Orig(hdc, b.data(), (int)ft.length(),
-                                            prc, calcFmt, pDtp);
-                }
 
-                int applyLineYOffset = g_lineYOffset;
+                    std::wstring s1 = fS.substr(0, p1) + fs +
+                                      fS.substr(p1 + 2, p2 - p1 - 2),
+                                 s2 = g_boldUsed ? MakeBoldText(us) : us,
+                                 s3 = fS.substr(p2 + 2, p3 - p2 - 2) + ts +
+                                      fS.substr(p3 + 2);
 
-                HFONT hOldFont = NULL;
-                HFONT hNewFont = NULL;
-                float scale = (float)GetDeviceCaps(hdc, LOGPIXELSY) / 96.0f;
-                if (g_fontSize != 0) {
-                    HFONT hCurrent = (HFONT)GetCurrentObject(hdc, OBJ_FONT);
-                    LOGFONTW lf;
-                    if (GetObjectW(hCurrent, sizeof(lf), &lf)) {
-                        if (lf.lfHeight < 0)
-                            lf.lfHeight -= (int)(g_fontSize * scale);
-                        else
-                            lf.lfHeight += (int)(g_fontSize * scale);
-                        hNewFont = CreateFontIndirectW(&lf);
-                        if (hNewFont)
-                            hOldFont = (HFONT)SelectObject(hdc, hNewFont);
+                    if (fmt & DT_CALCRECT) {
+                        std::wstring ft = s1 + s2 + s3;
+                        std::vector<wchar_t> b(ft.begin(), ft.end());
+                        b.push_back(0);
+                        UINT calcFmt = fmt;
+                        if (ft.find(L'\n') != std::wstring::npos) {
+                            calcFmt &= ~DT_SINGLELINE;
+                        }
+                        return DrawTextExW_Orig(hdc, b.data(), (int)ft.length(),
+                                                prc, calcFmt, pDtp);
                     }
-                }
 
-                std::wstring ft = s1 + s2 + s3;
-                bool multiLine = (ft.find(L'\n') != std::wstring::npos);
+                    int applyLineYOffset = g_lineYOffset;
 
-                std::vector<wchar_t> b(ft.begin(), ft.end());
-                b.push_back(0);
-
-                UINT dF = fmt | DT_NOPREFIX;
-                if (!g_enableWordEllipsis) {
-                    dF &= ~(DT_END_ELLIPSIS | DT_PATH_ELLIPSIS |
-                            DT_WORD_ELLIPSIS);
-                } else {
-                    dF |= DT_WORD_ELLIPSIS | DT_END_ELLIPSIS;
-                }
-                RECT r = *prc;
-                r.top += applyLineYOffset;
-                r.bottom += applyLineYOffset;
-
-                int ft_ret = 0;
-                if (multiLine) {
-                    std::vector<std::wstring> lines;
-                    size_t start_pos = 0, end_pos = 0;
-                    while ((end_pos = ft.find(L'\n', start_pos)) !=
-                           std::wstring::npos) {
-                        lines.push_back(
-                            ft.substr(start_pos, end_pos - start_pos));
-                        start_pos = end_pos + 1;
-                    }
-                    lines.push_back(ft.substr(start_pos));
-
-                    dF &= ~(DT_SINGLELINE | DT_VCENTER | DT_BOTTOM);
-                    dF |= DT_TOP | DT_SINGLELINE | DT_NOCLIP | DT_NOPREFIX;
-
-                    int totalHeight = 0;
-                    for (size_t i = 0; i < lines.size(); ++i) {
-                        RECT lr = r;
-                        lr.top += totalHeight;
-                        lr.bottom += 1000;
-                        std::vector<wchar_t> bl(lines[i].begin(),
-                                                lines[i].end());
-                        bl.push_back(0);
-                        if (fmt & DT_CALCRECT) {
-                            DrawTextExW_Orig(hdc, bl.data(),
-                                             (int)lines[i].length(), &lr,
-                                             dF | DT_CALCRECT, pDtp);
-                            totalHeight += (lr.bottom - lr.top) + g_lineSpacing;
-                        } else {
-                            RECT calcR = lr;
-                            DrawTextExW_Orig(hdc, bl.data(),
-                                             (int)lines[i].length(), &calcR,
-                                             dF | DT_CALCRECT, pDtp);
-                            DrawTextExW_Orig(hdc, bl.data(),
-                                             (int)lines[i].length(), &lr, dF,
-                                             pDtp);
-                            totalHeight +=
-                                (calcR.bottom - calcR.top) + g_lineSpacing;
+                    HFONT hOldFont = NULL;
+                    HFONT hNewFont = NULL;
+                    float scale = (float)GetDeviceCaps(hdc, LOGPIXELSY) / 96.0f;
+                    if (g_fontSize != 0) {
+                        HFONT hCurrent = (HFONT)GetCurrentObject(hdc, OBJ_FONT);
+                        LOGFONTW lf;
+                        if (GetObjectW(hCurrent, sizeof(lf), &lf)) {
+                            if (lf.lfHeight < 0)
+                                lf.lfHeight -= (int)(g_fontSize * scale);
+                            else
+                                lf.lfHeight += (int)(g_fontSize * scale);
+                            hNewFont = CreateFontIndirectW(&lf);
+                            if (hNewFont)
+                                hOldFont = (HFONT)SelectObject(hdc, hNewFont);
                         }
                     }
-                    if (fmt & DT_CALCRECT) {
-                        prc->bottom = prc->top + totalHeight - g_lineSpacing;
-                    }
-                    ft_ret = totalHeight - g_lineSpacing;
-                } else {
-                    ft_ret = DrawTextExW_Orig(hdc, b.data(), (int)ft.length(),
-                                              &r, dF, pDtp);
-                }
 
-                if (hOldFont) {
-                    SelectObject(hdc, hOldFont);
-                    DeleteObject(hNewFont);
+                    std::wstring ft = s1 + s2 + s3;
+                    bool multiLine = (ft.find(L'\n') != std::wstring::npos);
+
+                    std::vector<wchar_t> b(ft.begin(), ft.end());
+                    b.push_back(0);
+
+                    UINT dF = fmt | DT_NOPREFIX;
+                    if (!g_enableWordEllipsis) {
+                        dF &= ~(DT_END_ELLIPSIS | DT_PATH_ELLIPSIS |
+                                DT_WORD_ELLIPSIS);
+                    } else {
+                        dF |= DT_WORD_ELLIPSIS | DT_END_ELLIPSIS;
+                    }
+                    RECT r = *prc;
+                    r.top += applyLineYOffset;
+                    r.bottom += applyLineYOffset;
+
+                    int ft_ret = 0;
+                    if (multiLine) {
+                        std::vector<std::wstring> lines;
+                        size_t start_pos = 0, end_pos = 0;
+                        while ((end_pos = ft.find(L'\n', start_pos)) !=
+                               std::wstring::npos) {
+                            lines.push_back(
+                                ft.substr(start_pos, end_pos - start_pos));
+                            start_pos = end_pos + 1;
+                        }
+                        lines.push_back(ft.substr(start_pos));
+
+                        dF &= ~(DT_SINGLELINE | DT_VCENTER | DT_BOTTOM);
+                        dF |= DT_TOP | DT_SINGLELINE | DT_NOCLIP | DT_NOPREFIX;
+
+                        int totalHeight = 0;
+                        for (size_t i = 0; i < lines.size(); ++i) {
+                            RECT lr = r;
+                            lr.top += totalHeight;
+                            lr.bottom += 1000;
+                            std::vector<wchar_t> bl(lines[i].begin(),
+                                                    lines[i].end());
+                            bl.push_back(0);
+                            if (fmt & DT_CALCRECT) {
+                                DrawTextExW_Orig(hdc, bl.data(),
+                                                 (int)lines[i].length(), &lr,
+                                                 dF | DT_CALCRECT, pDtp);
+                                totalHeight +=
+                                    (lr.bottom - lr.top) + g_lineSpacing;
+                            } else {
+                                RECT calcR = lr;
+                                DrawTextExW_Orig(hdc, bl.data(),
+                                                 (int)lines[i].length(), &calcR,
+                                                 dF | DT_CALCRECT, pDtp);
+                                DrawTextExW_Orig(hdc, bl.data(),
+                                                 (int)lines[i].length(), &lr,
+                                                 dF, pDtp);
+                                totalHeight +=
+                                    (calcR.bottom - calcR.top) + g_lineSpacing;
+                            }
+                        }
+                        if (fmt & DT_CALCRECT) {
+                            prc->bottom =
+                                prc->top + totalHeight - g_lineSpacing;
+                        }
+                        ft_ret = totalHeight - g_lineSpacing;
+                    } else {
+                        ft_ret = DrawTextExW_Orig(
+                            hdc, b.data(), (int)ft.length(), &r, dF, pDtp);
+                    }
+
+                    if (hOldFont) {
+                        SelectObject(hdc, hOldFont);
+                        DeleteObject(hNewFont);
+                    }
+                    return ft_ret;
                 }
-                return ft_ret;
             }
         }
     }
+
     return DrawTextExW_Orig(hdc, psz, cch, prc, fmt, pDtp);
 }
 
