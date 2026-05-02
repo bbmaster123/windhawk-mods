@@ -23,7 +23,7 @@ outline
 - rounded corners
 - glossy overlay toggle option (for a more Windows Aero-ish looking aesthetic)
 - height/width controls (inset) controls for disk bar and track
-- custom disk usage text with font size adjustment, muti-line support,
+- custom disk usage text with font size adjustment, multi-line support,
 line-height adjustment, and more
 
 ex.
@@ -42,7 +42,7 @@ ex.
 - barFullStart: "#E74C3C"
   $name: Bar Full Color Gradient Start
 - barFullEnd: "#C0392B"
-  $name: Bar Full Color Graient End
+  $name: Bar Full Color Gradient End
 - trackColor: "#20000000"
   $name: Track Color (Unused Space)
 - trackLeftInset: 0
@@ -71,7 +71,7 @@ ex.
   $name: Bar Inset Top
 - bottomInset: 0
   $name: Bar Inset Bottom
-- formatString: "%s free I %s used\n%s total"
+- formatString: "%s free | %s used\\n%s total"
   $name: Text Display Format
   $description: custom disk usage text.%s for each disk usage stat, \n for new line
 - boldUsed: true
@@ -87,12 +87,21 @@ ex.
   $name: Text Vertical Offset
 - barYOffset: 0
   $name: Progress Bar Vertical Offset
+- trackBorderOffset: 0
+  $name: Track Border Offset
+  $description: Adjusts the border position relative to the track. Positive values expand outwards.
+- fillPadding: 0
+  $name: Fill Bar Padding
+  $description: Extra space between the progress fill and the track border.
 - lineSpacing: 0
   $name: Line Height
   $description: Adjusts the vertical space between lines of text 
 - fontSize: 0
   $name: Font Size
   $description: Adjusts the font size (positive is larger, negative is smaller)
+- roundFillBothSides: true
+  $name: Round Both Sides of Fill
+  $description: If enabled, both sides of the progress bar will be rounded. If disabled, the right side will be flat unless full.
 - enableWordEllipsis: false
   $name: Enable Word Ellipsis 
   $description: (Adds "..." if text is too long)
@@ -118,7 +127,8 @@ using namespace Gdiplus;
 // --- Global State ---
 enum class BoldStyle { Serif, SansSerif };
 std::wstring g_formatString;
-bool g_boldUsed, g_removeSpace, g_showGloss, g_enableWordEllipsis;
+bool g_boldUsed, g_removeSpace, g_showGloss, g_enableWordEllipsis,
+    g_roundFillBothSides;
 int g_lineYOffset, g_cornerRadius, g_fontSize;
 int g_barYOffset, g_lineSpacing;
 int g_leftInset, g_rightInset, g_topInset, g_bottomInset;
@@ -126,7 +136,7 @@ int g_trackLeftInset, g_trackRightInset, g_trackTopInset, g_trackBottomInset;
 int g_gradientDirection;
 ARGB g_barNormalStart, g_barNormalEnd, g_barFullStart, g_barFullEnd,
     g_trackColor, g_borderColor;
-float g_borderThickness;
+float g_borderThickness, g_trackBorderOffset, g_fillPadding;
 BoldStyle g_boldStyle;
 ULONG_PTR g_gdiplusToken;
 
@@ -252,7 +262,10 @@ void LoadSettings() {
     g_gradientDirection = Wh_GetIntSetting(L"gradientDirection");
     g_cornerRadius = Wh_GetIntSetting(L"cornerRadius");
     g_showGloss = Wh_GetIntSetting(L"showGloss") != 0;
+    g_roundFillBothSides = Wh_GetIntSetting(L"roundFillBothSides") != 0;
     g_borderThickness = (float)Wh_GetIntSetting(L"borderThickness");
+    g_trackBorderOffset = (float)Wh_GetIntSetting(L"trackBorderOffset");
+    g_fillPadding = (float)Wh_GetIntSetting(L"fillPadding");
     g_leftInset = Wh_GetIntSetting(L"leftInset");
     g_rightInset = Wh_GetIntSetting(L"rightInset");
     g_topInset = Wh_GetIntSetting(L"topInset");
@@ -369,8 +382,11 @@ std::wstring MakeBoldText(const std::wstring& s) {
 }
 
 static bool IsValidDiskBarWindow(HWND hwnd) {
-    if (!hwnd)
+    if (!hwnd) {
+        // WindowFromDC can return NULL for memory DCs (used in double buffering).
+        // We must return true to allow drawing to these off-screen buffers.
         return true;
+    }
     HWND walk = hwnd;
     int limit = 15;
     while (walk && limit-- > 0) {
@@ -395,17 +411,62 @@ static bool IsValidDiskBarWindow(HWND hwnd) {
     return true;
 }
 
-static void BuildRoundedPath(GraphicsPath& path, RectF rect, float radius) {
-    float d = std::min(radius * 2.0f, rect.Height);
-    if (d < 1.0f) {
+thread_local static HDC g_lastBarDC = NULL;
+thread_local static RECT g_lastBarRect = {0};
+
+static void BuildRoundedPath(GraphicsPath& path,
+                             RectF rect,
+                             float radius,
+                             bool rL = true,
+                             bool rR = true) {
+    path.Reset();
+    if (radius < 0.5f) {
         path.AddRectangle(rect);
         return;
     }
-    path.AddArc(rect.X, rect.Y, d, d, 180.0f, 90.0f);
-    path.AddArc(rect.X + rect.Width - d, rect.Y, d, d, 270.0f, 90.0f);
-    path.AddArc(rect.X + rect.Width - d, rect.Y + rect.Height - d, d, d, 0.0f,
-                90.0f);
-    path.AddArc(rect.X, rect.Y + rect.Height - d, d, d, 90.0f, 90.0f);
+
+    float d = radius * 2.0f;
+    if (d > rect.Width) d = rect.Width;
+    if (d > rect.Height) d = rect.Height;
+
+    float x = rect.X;
+    float y = rect.Y;
+    float w = rect.Width;
+    float h = rect.Height;
+
+    path.StartFigure();
+
+    // Top-left
+    if (rL) {
+        path.AddArc(x, y, d, d, 180, 90);
+    } else {
+        path.AddLine(x, y + radius, x, y);
+        path.AddLine(x, y, x + radius, y);
+    }
+
+    // Top-right
+    if (rR) {
+        path.AddArc(x + w - d, y, d, d, 270, 90);
+    } else {
+        path.AddLine(x + w - radius, y, x + w, y);
+        path.AddLine(x + w, y, x + w, y + radius);
+    }
+
+    // Bottom-right
+    if (rR) {
+        path.AddArc(x + w - d, y + h - d, d, d, 0, 90);
+    } else {
+        path.AddLine(x + w, y + h - radius, x + w, y + h);
+        path.AddLine(x + w, y + h, x + w - radius, y + h);
+    }
+
+    // Bottom-left
+    if (rL) {
+        path.AddArc(x, y + h - d, d, d, 90, 90);
+    } else {
+        path.AddLine(x + radius, y + h, x, y + h);
+        path.AddLine(x, y + h, x, y + h - radius);
+    }
     path.CloseFigure();
 }
 
@@ -414,57 +475,123 @@ static void PaintEnhancedBar(HDC hdc,
                              LPCRECT pClipRect,
                              int iStateId,
                              bool isFill) {
+    float scale = 1.0f;
+    static auto pGetDpiForWindow = (UINT(WINAPI *)(HWND))GetProcAddress(
+        GetModuleHandleW(L"user32.dll"), "GetDpiForWindow");
+
+    HWND hwnd = WindowFromDC(hdc);
+    if (pGetDpiForWindow && hwnd) {
+        scale = (float)pGetDpiForWindow(hwnd) / 96.0f;
+    } else {
+        scale = (float)GetDeviceCaps(hdc, LOGPIXELSY) / 96.0f;
+    }
+
     Graphics graphics{hdc};
     if (pClipRect) {
         graphics.SetClip(Rect(pClipRect->left, pClipRect->top,
                               pClipRect->right - pClipRect->left,
                               pClipRect->bottom - pClipRect->top));
     }
+
     graphics.SetSmoothingMode(SmoothingModeAntiAlias);
-    graphics.SetPixelOffsetMode(PixelOffsetModeHighQuality);
-    RectF rect{(REAL)pRect->left, (REAL)pRect->top,
-               (REAL)(pRect->right - pRect->left),
-               (REAL)(pRect->bottom - pRect->top)};
+    graphics.SetPixelOffsetMode(PixelOffsetModeHalf);
+    graphics.SetCompositingQuality(CompositingQualityHighQuality);
+    graphics.SetInterpolationMode(InterpolationModeHighQualityBicubic);
 
-    rect.Y += (float)g_barYOffset;
+    RectF barRect{(REAL)pRect->left, (REAL)pRect->top,
+                  (REAL)(pRect->right - pRect->left),
+                  (REAL)(pRect->bottom - pRect->top)};
 
-    if (isFill) {
-        rect.X += (float)g_leftInset;
-        rect.Y += (float)g_topInset;
-        rect.Width -= (float)(g_leftInset + g_rightInset);
-        rect.Height -= (float)(g_topInset + g_bottomInset);
-        if (rect.Width > 1 && rect.Height > 1) {
-            GraphicsPath fillPath;
-            BuildRoundedPath(fillPath, rect, (float)g_cornerRadius);
-            ARGB c1 = (iStateId == 2) ? g_barFullStart : g_barNormalStart;
-            ARGB c2 = (iStateId == 2) ? g_barFullEnd : g_barNormalEnd;
-            LinearGradientBrush br{rect, Color{c1}, Color{c2},
-                                   static_cast<REAL>(g_gradientDirection)};
-            graphics.FillPath(&br, &fillPath);
-            if (g_showGloss) {
-                // Smooth full-height gloss
-                LinearGradientBrush gBr{rect, Color{142, 255, 255, 255},
-                                        Color{0, 255, 255, 255}, 90.0f};
-                graphics.SetClip(&fillPath);
-                graphics.FillRectangle(&gBr, rect);
-                graphics.ResetClip();
-            }
+    barRect.Y += (float)g_barYOffset;
+
+    // 1. Calculate Track Geometry (The container)
+    // We try to derive the track from g_lastBarRect to ensure the Fill pass knows 
+    // the full width for rounding its right side.
+    RectF trackRect;
+    if (isFill && g_lastBarRect.right > g_lastBarRect.left) {
+        trackRect.X = (float)g_lastBarRect.left;
+        trackRect.Y = (float)g_lastBarRect.top;
+        trackRect.Width = (float)(g_lastBarRect.right - g_lastBarRect.left);
+        trackRect.Height = (float)(g_lastBarRect.bottom - g_lastBarRect.top);
+        trackRect.Y += (float)g_barYOffset;
+    } else {
+        trackRect = barRect;
+    }
+
+    trackRect.X += (float)g_trackLeftInset * scale;
+    trackRect.Y += (float)g_trackTopInset * scale;
+    trackRect.Width -= (float)(g_trackLeftInset + g_trackRightInset) * scale;
+    trackRect.Height -= (float)(g_trackTopInset + g_trackBottomInset) * scale;
+
+    if (trackRect.Width <= 0.1f || trackRect.Height <= 0.1f) return;
+
+    // 2. Paths
+    GraphicsPath trackPath;
+    BuildRoundedPath(trackPath, trackRect, (float)g_cornerRadius * scale);
+
+    RectF borderRect = trackRect;
+    float bOff = g_trackBorderOffset * scale;
+    if (bOff != 0) {
+        borderRect.Inflate(bOff, bOff);
+    }
+    GraphicsPath borderPath;
+    BuildRoundedPath(borderPath, borderRect, (float)g_cornerRadius * scale);
+
+    if (!isFill) {
+        // PASS A: Background
+        SolidBrush trBr{Color{g_trackColor}};
+        graphics.FillPath(&trBr, &trackPath);
+
+        if (((g_borderColor >> 24) & 0xFF) > 0 && g_borderThickness > 0.01f) {
+            Pen p{Color{g_borderColor}, g_borderThickness * scale};
+            p.SetAlignment(PenAlignmentCenter);
+            graphics.DrawPath(&p, &borderPath);
         }
     } else {
-        rect.X += (float)g_trackLeftInset;
-        rect.Y += (float)g_trackTopInset;
-        rect.Width -= (float)(g_trackLeftInset + g_trackRightInset);
-        rect.Height -= (float)(g_trackTopInset + g_trackBottomInset);
-        if (rect.Width > 1 && rect.Height > 1) {
-            GraphicsPath trackPath;
-            BuildRoundedPath(trackPath, rect, (float)g_cornerRadius);
-            SolidBrush trBr{Color{g_trackColor}};
-            graphics.FillPath(&trBr, &trackPath);
-            if (((g_borderColor >> 24) & 0xFF) > 0 &&
-                g_borderThickness > 0.0f) {
-                Pen p{Color{g_borderColor}, g_borderThickness};
-                p.SetAlignment(PenAlignmentCenter);
-                graphics.DrawPath(&p, &trackPath);
+        // PASS B: Fill
+
+        RectF fillRect = barRect;
+        fillRect.X += (float)g_leftInset * scale;
+        fillRect.Y += (float)g_topInset * scale;
+        fillRect.Width -= (float)(g_leftInset + g_rightInset) * scale;
+        fillRect.Height -= (float)(g_topInset + g_bottomInset) * scale;
+
+        float fPad = g_fillPadding * scale;
+        if (fPad != 0) {
+            fillRect.Inflate(-fPad, -fPad);
+        }
+
+        if (fillRect.Width > 0.1f && fillRect.Height > 0.1f) {
+            bool rR = g_roundFillBothSides;
+            if (!rR) {
+                // If fill reaches roughly the right side of the track, round it too
+                if (pRect->right >= g_lastBarRect.right - (int)(1 * scale)) {
+                    rR = true;
+                }
+            }
+
+            GraphicsPath fillPath;
+            BuildRoundedPath(fillPath, fillRect, (float)g_cornerRadius * scale, true, rR);
+            
+            ARGB c1 = (iStateId == 2) ? g_barFullStart : g_barNormalStart;
+            ARGB c2 = (iStateId == 2) ? g_barFullEnd : g_barNormalEnd;
+            RectF gradRect = fillRect;
+            gradRect.Inflate(0.5f, 0.5f);
+            LinearGradientBrush br{gradRect, Color{c1}, Color{c2}, (REAL)g_gradientDirection};
+            br.SetWrapMode(WrapModeTileFlipXY);
+            graphics.FillPath(&br, &fillPath);
+
+            if (g_showGloss) {
+                graphics.SetClip(&fillPath);
+                RectF gRect = fillRect;
+                gRect.Y += 1.0f;
+                gRect.Height -= 2.0f;
+                gRect.Height = fmax(gRect.Height / 2.0f, 0.5f);
+                LinearGradientBrush gBr{gRect, Color{142, 255, 255, 255},
+                                        Color{0, 255, 255, 255}, 90.0f};
+                gBr.SetWrapMode(WrapModeTileFlipXY);
+                graphics.FillRectangle(&gBr, gRect);
+                graphics.ResetClip();
             }
         }
     }
@@ -557,8 +684,7 @@ static bool IsDiskBar(HTHEME hTheme,
     return true;
 }
 
-thread_local static RECT g_lastBarRect = {0};
-thread_local static HDC g_lastBarDC = NULL;
+// (Globals removed from here)
 
 HRESULT WINAPI HookedDrawThemeBackground(HTHEME hTheme,
                                          HDC hdc,
@@ -567,18 +693,19 @@ HRESULT WINAPI HookedDrawThemeBackground(HTHEME hTheme,
                                          LPCRECT pRect,
                                          LPCRECT pClipRect) {
     if (IsDiskBar(hTheme, hdc, iPartId, iStateId, pRect)) {
-        // Suppress native drawing entirely
         bool first = !(hdc == g_lastBarDC && EqualRect(pRect, &g_lastBarRect));
 
         if (iPartId == 5) {
+            // Fill
             PaintEnhancedBar(hdc, pRect, pClipRect, iStateId, true);
         } else if (iPartId == 1 || iPartId == 11) {
+            // Track / Background
+            g_lastBarDC = hdc;
+            g_lastBarRect = *pRect;
             if (first)
                 PaintEnhancedBar(hdc, pRect, pClipRect, iStateId, false);
         }
 
-        g_lastBarDC = hdc;
-        g_lastBarRect = *pRect;
         return S_OK;
     }
     return DrawThemeBackground_Orig(hTheme, hdc, iPartId, iStateId, pRect,
@@ -986,6 +1113,12 @@ int WINAPI DrawTextExW_Hook(HDC hdc,
 }
 
 static BOOL CALLBACK RefreshExplorerCallback(HWND hwnd, LPARAM lParam) {
+    DWORD dwProcessId;
+    GetWindowThreadProcessId(hwnd, &dwProcessId);
+    if (dwProcessId != GetCurrentProcessId()) {
+        return TRUE;
+    }
+
     wchar_t cls[MAX_PATH];
     if (GetClassNameW(hwnd, cls, MAX_PATH)) {
         if (wcscmp(cls, L"CabinetWClass") == 0) {
@@ -1035,13 +1168,16 @@ BOOL Wh_ModInit() {
             (void**)&DrawThemeBackground_Orig);
     }
 
-    HMODULE user32 = GetModuleHandle(L"user32.dll");
-    if (user32) {
-        void* pOpenDpi = (void*)GetProcAddress(user32, "OpenThemeDataForDpi");
+    if (uxtheme) {
+        void* pOpenDpi = (void*)GetProcAddress(uxtheme, "OpenThemeDataForDpi");
         if (pOpenDpi) {
             Wh_SetFunctionHook(pOpenDpi, (void*)OpenThemeDataForDpi_Hook,
                                (void**)&OpenThemeDataForDpi_Orig);
         }
+    }
+
+    HMODULE user32 = GetModuleHandle(L"user32.dll");
+    if (user32) {
         Wh_SetFunctionHook((void*)GetProcAddress(user32, "DrawTextW"),
                            (void*)DrawTextW_Hook, (void**)&DrawTextW_Orig);
         Wh_SetFunctionHook((void*)GetProcAddress(user32, "DrawTextExW"),
