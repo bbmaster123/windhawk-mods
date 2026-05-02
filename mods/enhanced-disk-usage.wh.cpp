@@ -32,14 +32,14 @@ ex.
 // ==WindhawkModSettings==
 /*
 
-- barNormalStart: "#2ECC71"
+- barNormalStart: "#FF2ECC71"
   $name: Bar Color Gradient Start
   $description: set start and end to the same value if you do not want a gradient
-- barNormalEnd: "#27AE60"
+- barNormalEnd: "#FF27AE60"
   $name: Bar Color Gradient End
-- barFullStart: "#E74C3C"
+- barFullStart: "#FFE74C3C"
   $name: Bar Full Color Gradient Start
-- barFullEnd: "#C0392B"
+- barFullEnd: "#FFC0392B"
   $name: Bar Full Color Gradient End
 - gradientDirection: 90
   $name: Gradient Direction
@@ -73,14 +73,14 @@ ex.
   $name: Track Inset Top
 - trackBottomInset: 0
   $name: Track Inset Bottom
-- borderColor: "#80FFFFFF"
+- borderColor: "#80BBBBBB"
   $name: Border Color
 - borderThickness: 1
   $name: Border Thickness
 - trackBorderOffset: 0
   $name: Border Offset
   $description: Adjusts the border position relative to the track. Positive values expand outwards.
-- formatString: "%s free | %s used\\n%s total"
+- formatString: "%s free | %s used\\n%s Total"
   $name: Text Display Format
   $description: custom disk usage text.%s for each disk usage stat, \n for new line
 - boldUsed: true
