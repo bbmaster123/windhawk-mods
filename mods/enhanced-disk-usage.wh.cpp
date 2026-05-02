@@ -1,6 +1,6 @@
 // ==WindhawkMod==
-// @id              enhanced-disk-usage-fork
-// @name            Enhanced Disk Usage-Fork
+// @id              enhanced-disk-usage
+// @name            Enhanced Disk Usage
 // @description     Enables the ability to customize the disk drive tiles in explorer, targeting the disk's usage bar, as well as the details that appear below.
 // @version         1.0.1
 // @author          bbmaster123
