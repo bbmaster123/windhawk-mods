@@ -1,6 +1,6 @@
 // ==WindhawkMod==
-// @id              enhanced-disk-usage
-// @name            Enhanced Disk Usage
+// @id              enhanced-disk-usage-fork
+// @name            Enhanced Disk Usage-Fork
 // @description     Enables the ability to customize the disk drive tiles in explorer, targeting the disk's usage bar, as well as the details that appear below.
 // @version         1.0.1
 // @author          bbmaster123
@@ -419,16 +419,11 @@ static void BuildRoundedPath(GraphicsPath& path,
                              bool rL = true,
                              bool rR = true) {
     path.Reset();
-    if (radius < 0.5f) {
+    float d = std::min(radius * 2.0f, rect.Height);
+    if (d < 1.0f) {
         path.AddRectangle(rect);
         return;
     }
-
-    float d = radius * 2.0f;
-    if (d > rect.Width)
-        d = rect.Width;
-    if (d > rect.Height)
-        d = rect.Height;
 
     float x = rect.X;
     float y = rect.Y;
@@ -495,9 +490,7 @@ static void PaintEnhancedBar(HDC hdc,
     }
 
     graphics.SetSmoothingMode(SmoothingModeAntiAlias);
-    graphics.SetPixelOffsetMode(PixelOffsetModeHalf);
-    graphics.SetCompositingQuality(CompositingQualityHighQuality);
-    graphics.SetInterpolationMode(InterpolationModeHighQualityBicubic);
+    graphics.SetPixelOffsetMode(PixelOffsetModeHighQuality);
 
     RectF barRect{(REAL)pRect->left, (REAL)pRect->top,
                   (REAL)(pRect->right - pRect->left),
@@ -519,25 +512,25 @@ static void PaintEnhancedBar(HDC hdc,
         trackRect = barRect;
     }
 
-    trackRect.X += (float)g_trackLeftInset * scale;
-    trackRect.Y += (float)g_trackTopInset * scale;
-    trackRect.Width -= (float)(g_trackLeftInset + g_trackRightInset) * scale;
-    trackRect.Height -= (float)(g_trackTopInset + g_trackBottomInset) * scale;
+    trackRect.X += (float)g_trackLeftInset;
+    trackRect.Y += (float)g_trackTopInset;
+    trackRect.Width -= (float)(g_trackLeftInset + g_trackRightInset);
+    trackRect.Height -= (float)(g_trackTopInset + g_trackBottomInset);
 
     if (trackRect.Width <= 0.1f || trackRect.Height <= 0.1f)
         return;
 
     // 2. Paths
     GraphicsPath trackPath;
-    BuildRoundedPath(trackPath, trackRect, (float)g_cornerRadius * scale);
+    BuildRoundedPath(trackPath, trackRect, (float)g_cornerRadius);
 
     RectF borderRect = trackRect;
-    float bOff = g_trackBorderOffset * scale;
+    float bOff = g_trackBorderOffset;
     if (bOff != 0) {
         borderRect.Inflate(bOff, bOff);
     }
     GraphicsPath borderPath;
-    BuildRoundedPath(borderPath, borderRect, (float)g_cornerRadius * scale);
+    BuildRoundedPath(borderPath, borderRect, (float)g_cornerRadius);
 
     if (!isFill) {
         // PASS A: Background
@@ -545,7 +538,7 @@ static void PaintEnhancedBar(HDC hdc,
         graphics.FillPath(&trBr, &trackPath);
 
         if (((g_borderColor >> 24) & 0xFF) > 0 && g_borderThickness > 0.01f) {
-            Pen p{Color{g_borderColor}, g_borderThickness * scale};
+            Pen p{Color{g_borderColor}, g_borderThickness};
             p.SetAlignment(PenAlignmentCenter);
             graphics.DrawPath(&p, &borderPath);
         }
@@ -553,12 +546,12 @@ static void PaintEnhancedBar(HDC hdc,
         // PASS B: Fill
 
         RectF fillRect = barRect;
-        fillRect.X += (float)g_leftInset * scale;
-        fillRect.Y += (float)g_topInset * scale;
-        fillRect.Width -= (float)(g_leftInset + g_rightInset) * scale;
-        fillRect.Height -= (float)(g_topInset + g_bottomInset) * scale;
+        fillRect.X += (float)g_leftInset;
+        fillRect.Y += (float)g_topInset;
+        fillRect.Width -= (float)(g_leftInset + g_rightInset);
+        fillRect.Height -= (float)(g_topInset + g_bottomInset);
 
-        float fPad = g_fillPadding * scale;
+        float fPad = g_fillPadding;
         if (fPad != 0) {
             fillRect.Inflate(-fPad, -fPad);
         }
@@ -574,8 +567,8 @@ static void PaintEnhancedBar(HDC hdc,
             }
 
             GraphicsPath fillPath;
-            BuildRoundedPath(fillPath, fillRect, (float)g_cornerRadius * scale,
-                             true, rR);
+            BuildRoundedPath(fillPath, fillRect, (float)g_cornerRadius, true,
+                             rR);
 
             ARGB c1 = (iStateId == 2) ? g_barFullStart : g_barNormalStart;
             ARGB c2 = (iStateId == 2) ? g_barFullEnd : g_barNormalEnd;
