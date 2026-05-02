@@ -95,7 +95,7 @@ ex.
   $description: Extra space between the progress fill and the track border.
 - lineSpacing: 0
   $name: Line Height
-  $description: Adjusts the vertical space between lines of text 
+  $description: Adjusts the vertical space between lines of text
 - fontSize: 0
   $name: Font Size
   $description: Adjusts the font size (positive is larger, negative is smaller)
@@ -103,7 +103,7 @@ ex.
   $name: Round Both Sides of Fill
   $description: If enabled, both sides of the progress bar will be rounded. If disabled, the right side will be flat unless full.
 - enableWordEllipsis: false
-  $name: Enable Word Ellipsis 
+  $name: Enable Word Ellipsis
   $description: (Adds "..." if text is too long)
 */
 // ==/WindhawkModSettings==
@@ -383,8 +383,9 @@ std::wstring MakeBoldText(const std::wstring& s) {
 
 static bool IsValidDiskBarWindow(HWND hwnd) {
     if (!hwnd) {
-        // WindowFromDC can return NULL for memory DCs (used in double buffering).
-        // We must return true to allow drawing to these off-screen buffers.
+        // WindowFromDC can return NULL for memory DCs (used in double
+        // buffering). We must return true to allow drawing to these off-screen
+        // buffers.
         return true;
     }
     HWND walk = hwnd;
@@ -426,8 +427,10 @@ static void BuildRoundedPath(GraphicsPath& path,
     }
 
     float d = radius * 2.0f;
-    if (d > rect.Width) d = rect.Width;
-    if (d > rect.Height) d = rect.Height;
+    if (d > rect.Width)
+        d = rect.Width;
+    if (d > rect.Height)
+        d = rect.Height;
 
     float x = rect.X;
     float y = rect.Y;
@@ -476,7 +479,7 @@ static void PaintEnhancedBar(HDC hdc,
                              int iStateId,
                              bool isFill) {
     float scale = 1.0f;
-    static auto pGetDpiForWindow = (UINT(WINAPI *)(HWND))GetProcAddress(
+    static auto pGetDpiForWindow = (UINT(WINAPI*)(HWND))GetProcAddress(
         GetModuleHandleW(L"user32.dll"), "GetDpiForWindow");
 
     HWND hwnd = WindowFromDC(hdc);
@@ -505,8 +508,8 @@ static void PaintEnhancedBar(HDC hdc,
     barRect.Y += (float)g_barYOffset;
 
     // 1. Calculate Track Geometry (The container)
-    // We try to derive the track from g_lastBarRect to ensure the Fill pass knows 
-    // the full width for rounding its right side.
+    // We try to derive the track from g_lastBarRect to ensure the Fill pass
+    // knows the full width for rounding its right side.
     RectF trackRect;
     if (isFill && g_lastBarRect.right > g_lastBarRect.left) {
         trackRect.X = (float)g_lastBarRect.left;
@@ -523,7 +526,8 @@ static void PaintEnhancedBar(HDC hdc,
     trackRect.Width -= (float)(g_trackLeftInset + g_trackRightInset) * scale;
     trackRect.Height -= (float)(g_trackTopInset + g_trackBottomInset) * scale;
 
-    if (trackRect.Width <= 0.1f || trackRect.Height <= 0.1f) return;
+    if (trackRect.Width <= 0.1f || trackRect.Height <= 0.1f)
+        return;
 
     // 2. Paths
     GraphicsPath trackPath;
@@ -564,20 +568,23 @@ static void PaintEnhancedBar(HDC hdc,
         if (fillRect.Width > 0.1f && fillRect.Height > 0.1f) {
             bool rR = g_roundFillBothSides;
             if (!rR) {
-                // If fill reaches roughly the right side of the track, round it too
+                // If fill reaches roughly the right side of the track, round it
+                // too
                 if (pRect->right >= g_lastBarRect.right - (int)(1 * scale)) {
                     rR = true;
                 }
             }
 
             GraphicsPath fillPath;
-            BuildRoundedPath(fillPath, fillRect, (float)g_cornerRadius * scale, true, rR);
-            
+            BuildRoundedPath(fillPath, fillRect, (float)g_cornerRadius * scale,
+                             true, rR);
+
             ARGB c1 = (iStateId == 2) ? g_barFullStart : g_barNormalStart;
             ARGB c2 = (iStateId == 2) ? g_barFullEnd : g_barNormalEnd;
             RectF gradRect = fillRect;
             gradRect.Inflate(0.5f, 0.5f);
-            LinearGradientBrush br{gradRect, Color{c1}, Color{c2}, (REAL)g_gradientDirection};
+            LinearGradientBrush br{gradRect, Color{c1}, Color{c2},
+                                   (REAL)g_gradientDirection};
             br.SetWrapMode(WrapModeTileFlipXY);
             graphics.FillPath(&br, &fillPath);
 
@@ -810,10 +817,15 @@ int WINAPI DrawTextW_Hook(HDC hdc, LPCWSTR psz, int cch, LPRECT prc, UINT fmt) {
                                  us.end());
                     std::wstring fS = g_formatString;
                     size_t p1 = fS.find(L"%s");
-                    size_t p2 = p1 != std::wstring::npos ? fS.find(L"%s", p1 + 2) : std::wstring::npos;
-                    size_t p3 = p2 != std::wstring::npos ? fS.find(L"%s", p2 + 2) : std::wstring::npos;
+                    size_t p2 = p1 != std::wstring::npos
+                                    ? fS.find(L"%s", p1 + 2)
+                                    : std::wstring::npos;
+                    size_t p3 = p2 != std::wstring::npos
+                                    ? fS.find(L"%s", p2 + 2)
+                                    : std::wstring::npos;
 
-                    if (p1 == std::wstring::npos || p2 == std::wstring::npos || p3 == std::wstring::npos) {
+                    if (p1 == std::wstring::npos || p2 == std::wstring::npos ||
+                        p3 == std::wstring::npos) {
                         fS = L"%s free | %s used\n%s total";
                         p1 = fS.find(L"%s");
                         p2 = fS.find(L"%s", p1 + 2);
@@ -984,10 +996,15 @@ int WINAPI DrawTextExW_Hook(HDC hdc,
                                  us.end());
                     std::wstring fS = g_formatString;
                     size_t p1 = fS.find(L"%s");
-                    size_t p2 = p1 != std::wstring::npos ? fS.find(L"%s", p1 + 2) : std::wstring::npos;
-                    size_t p3 = p2 != std::wstring::npos ? fS.find(L"%s", p2 + 2) : std::wstring::npos;
+                    size_t p2 = p1 != std::wstring::npos
+                                    ? fS.find(L"%s", p1 + 2)
+                                    : std::wstring::npos;
+                    size_t p3 = p2 != std::wstring::npos
+                                    ? fS.find(L"%s", p2 + 2)
+                                    : std::wstring::npos;
 
-                    if (p1 == std::wstring::npos || p2 == std::wstring::npos || p3 == std::wstring::npos) {
+                    if (p1 == std::wstring::npos || p2 == std::wstring::npos ||
+                        p3 == std::wstring::npos) {
                         fS = L"%s free | %s used\n%s total";
                         p1 = fS.find(L"%s");
                         p2 = fS.find(L"%s", p1 + 2);
