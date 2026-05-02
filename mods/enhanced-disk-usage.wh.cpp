@@ -2,7 +2,7 @@
 // @id              enhanced-disk-usage
 // @name            Enhanced Disk Usage
 // @description     Enables the ability to customize the disk drive tiles in explorer, targeting the disk's usage bar, as well as the details that appear below.
-// @version         1.0
+// @version         1.0.1
 // @author          bbmaster123
 // @github          https://github.com/bbmaster123
 // @include         explorer.exe
@@ -13,18 +13,16 @@
 /*
 ![Screenshot](https://raw.githubusercontent.com/bbmaster123/FWFU/refs/heads/main/Assets/screenshot.png)
 
-Enables the ability to customize the disk drive tiles in explorer, targeting the
-disk's usage bar, as well as the details that appear below.
+Enables the ability to customize the disk drive tiles in explorer, targeting the disk's usage bar, as well
+as the details that appear below.
 
-- custom colors with transparency for disk usage, track (background/unused), and
-outline
+- custom colors with transparency for disk usage, track (background/unused), and outline
 - separate disk colors for when drive is near full
 - linear gradient support with configurable direction
 - rounded corners
 - glossy overlay toggle option (for a more Windows Aero-ish looking aesthetic)
 - height/width controls (inset) controls for disk bar and track
-- custom disk usage text with font size adjustment, multi-line support,
-line-height adjustment, and more
+- custom disk usage text with font size adjustment, multi-line support, line-height adjustment, and more
 
 ex.
 100GB free | 100GB/200GB
@@ -43,26 +41,18 @@ ex.
   $name: Bar Full Color Gradient Start
 - barFullEnd: "#C0392B"
   $name: Bar Full Color Gradient End
-- trackColor: "#20000000"
-  $name: Track Color (Unused Space)
-- trackLeftInset: 0
-  $name: Track Inset Left
-- trackRightInset: 0
-  $name: Track Inset Right
-- trackTopInset: 0
-  $name: Track Inset Top
-- trackBottomInset: 0
-  $name: Track Inset Bottom
 - gradientDirection: 90
   $name: Gradient Direction
-- borderColor: "#80FFFFFF"
-  $name: Border Color
-- borderThickness: 1
-  $name: Border Thickness
 - cornerRadius: 6
   $name: Corner Radius
+- roundFillBothSides: true
+  $name: Round Both Sides of Fill
+  $description: If enabled, both sides of the progress bar will be rounded. If disabled, the right side will be flat unless full.   
 - showGloss: true
   $name: Enable Glossy Overlay
+- fillPadding: 0
+  $name: Fill Bar Padding
+  $description: Extra space between the progress fill and the track border.  
 - leftInset: 0
   $name: Bar Inset Left
 - rightInset: 0
@@ -71,6 +61,25 @@ ex.
   $name: Bar Inset Top
 - bottomInset: 0
   $name: Bar Inset Bottom
+- barYOffset: 0
+  $name: Progress Bar Vertical Offset  
+- trackColor: "#20000000" 
+  $name: Track Color (Unused Space)  
+- trackLeftInset: 0
+  $name: Track Inset Left
+- trackRightInset: 0
+  $name: Track Inset Right
+- trackTopInset: 0
+  $name: Track Inset Top
+- trackBottomInset: 0
+  $name: Track Inset Bottom
+- borderColor: "#80FFFFFF"
+  $name: Border Color
+- borderThickness: 1
+  $name: Border Thickness
+- trackBorderOffset: 0
+  $name: Border Offset
+  $description: Adjusts the border position relative to the track. Positive values expand outwards.
 - formatString: "%s free | %s used\\n%s total"
   $name: Text Display Format
   $description: custom disk usage text.%s for each disk usage stat, \n for new line
@@ -85,23 +94,12 @@ ex.
   $name: Remove Space before Units (100GB/100 GB)
 - lineYOffset: 0
   $name: Text Vertical Offset
-- barYOffset: 0
-  $name: Progress Bar Vertical Offset
-- trackBorderOffset: 0
-  $name: Track Border Offset
-  $description: Adjusts the border position relative to the track. Positive values expand outwards.
-- fillPadding: 0
-  $name: Fill Bar Padding
-  $description: Extra space between the progress fill and the track border.
 - lineSpacing: 0
   $name: Line Height
   $description: Adjusts the vertical space between lines of text
 - fontSize: 0
   $name: Font Size
   $description: Adjusts the font size (positive is larger, negative is smaller)
-- roundFillBothSides: true
-  $name: Round Both Sides of Fill
-  $description: If enabled, both sides of the progress bar will be rounded. If disabled, the right side will be flat unless full.
 - enableWordEllipsis: false
   $name: Enable Word Ellipsis
   $description: (Adds "..." if text is too long)
@@ -668,7 +666,7 @@ static bool IsDiskBar(HTHEME hTheme,
         int limit = 15;
         while (walk && limit-- > 0) {
             wchar_t cls[MAX_PATH];
-            if (GetClassName(walk, cls, MAX_PATH)) {
+            if (GetClassNameW(walk, cls, MAX_PATH)) {
                 std::wstring wCls(cls);
                 std::transform(wCls.begin(), wCls.end(), wCls.begin(),
                                ::towlower);
@@ -679,6 +677,9 @@ static bool IsDiskBar(HTHEME hTheme,
                     wCls.find(L"listview") != std::wstring::npos ||
                     wCls.find(L"property") != std::wstring::npos) {
                     return false;
+                }
+                if (wCls == L"directuihwnd") {
+                    break;
                 }
             }
             walk = GetParent(walk);
@@ -1149,12 +1150,6 @@ static BOOL CALLBACK RefreshExplorerCallback(HWND hwnd, LPARAM lParam) {
 }
 
 void RefreshExplorer() {
-    SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, NULL, NULL);
-    SendMessageTimeout(HWND_BROADCAST, WM_SETTINGCHANGE, 0,
-                       (LPARAM)L"Transitions", SMTO_ABORTIFHUNG, 5000, NULL);
-    SendMessageTimeout(HWND_BROADCAST, WM_THEMECHANGED, 0, 0, SMTO_ABORTIFHUNG,
-                       5000, NULL);
-
     EnumWindows(RefreshExplorerCallback, 0);
 }
 
